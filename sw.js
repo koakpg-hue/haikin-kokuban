@@ -1,5 +1,5 @@
 // 画面を端末に保存して、電波がなくても開けるようにする。
-const CACHE = "haikin-v2";
+const CACHE = "haikin-v3";
 const FILES = ["./", "index.html", "app.js", "manifest.json", "icon-192.png"];
 
 self.addEventListener("install", (e) => {

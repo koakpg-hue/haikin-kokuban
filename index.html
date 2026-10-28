@@ -26,7 +26,7 @@
   .shoot { position:fixed; left:0; right:0; bottom:0; padding:12px 16px max(12px, env(safe-area-inset-bottom)); background:#fffe; border-top:1px solid var(--line); }
   .shoot label { display:block; text-align:center; background:var(--accent); color:#fff; font-size:20px; font-weight:700; padding:16px; border-radius:12px; }
   .shoot label.off { background:#999; }
-  .toast { position:fixed; left:16px; right:16px; bottom:96px; background:#222; color:#fff; padding:12px; border-radius:8px; font-size:15px; display:none; }
+  .toast { z-index:6; position:fixed; left:16px; right:16px; bottom:96px; background:#222; color:#fff; padding:12px; border-radius:8px; font-size:15px; display:none; }
   .rec { display:flex; gap:10px; background:#fff; border:1px solid var(--line); border-radius:8px; padding:8px; margin-bottom:8px; }
   .rec img { width:96px; height:72px; object-fit:cover; border-radius:4px; }
   .rec .meta { font-size:14px; line-height:1.5; flex:1; }
@@ -35,6 +35,14 @@
   .tools button { padding:10px 12px; font-size:15px; margin:4px 4px 0 0; }
   .filebtn { display:inline-block; margin-top:10px; background:#fff; color:var(--board); font-weight:700; padding:12px 16px; border-radius:8px; }
   .filebtn.small { border:1px solid var(--line); font-weight:400; padding:9px 12px; font-size:15px; }
+  .rec img { cursor:pointer; }
+  .viewer { position:fixed; inset:0; z-index:5; background:#111; color:#fff; display:flex; flex-direction:column; padding:max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom)); }
+  .vbar { display:flex; gap:8px; align-items:center; justify-content:space-between; padding:6px 4px; }
+  .vbar button { font-size:16px; padding:10px 14px; border-radius:8px; border:0; background:#eee; }
+  .vbar button.danger { background:#c92a2a; color:#fff; }
+  .vimg { flex:1; overflow:auto; display:flex; align-items:center; justify-content:center; }
+  .vimg img { max-width:100%; max-height:100%; }
+  .vhint { margin:4px; font-size:13px; color:#aaa; text-align:center; }
   [hidden] { display:none !important; }
 </style>
 </head>
@@ -60,7 +68,8 @@
 
 <main id="listView" hidden>
   <div class="tools">
-    <button id="exportBtn">未書き出しを共有で書き出す</button>
+    <button id="exportBtn">未書き出しを書き出す</button>
+    <button id="exportAllBtn">すべて書き出す</button>
     <label class="filebtn small">黒板データを読み直す<input id="boardsFile2" type="file" accept=".json,application/json" hidden></label>
   </div>
   <p id="storageInfo" style="font-size:13px;color:#666"></p>
@@ -70,6 +79,16 @@
 <div class="shoot" id="shootBar">
   <label id="shootLabel" class="off" for="camera">符号を選んでください</label>
   <input id="camera" type="file" accept="image/*" capture="environment" hidden disabled>
+</div>
+<div class="viewer" id="viewer" hidden>
+  <div class="vbar"><b id="viewerTitle"></b><button id="viewerClose">閉じる</button></div>
+  <div class="vimg"><img id="viewerImg" alt=""></div>
+  <p class="vhint">2本指で広げると拡大できます。</p>
+  <div class="vbar">
+    <button id="viewerKind"></button>
+    <button id="viewerReassign">符号を直す</button>
+    <button id="viewerDelete" class="danger">削除</button>
+  </div>
 </div>
 <div class="toast" id="toast"></div>
 <script src="app.js"></script>

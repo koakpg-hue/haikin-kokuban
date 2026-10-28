@@ -36,6 +36,7 @@ async function tx(mode, fn, store = "photos") {
 const putRecord = (rec) => tx("readwrite", (s) => s.put(rec));
 const allRecords = () => tx("readonly", (s) => s.getAll());
 const findBySha = (sha) => tx("readonly", (s) => s.index("sha256").get(sha));
+const deleteRecord = (id) => tx("readwrite", (s) => s.delete(id));
 const getSetting = (key) => tx("readonly", (s) => s.get(key), "settings");
 const putSetting = (key, value) => tx("readwrite", (s) => s.put(value, key), "settings");
 
@@ -70,6 +71,14 @@ function boardLines(board, floor) {
 function boardsFor(floor, type) {
   return state.data.boards.filter((b) => b.type === type && (b.floor === null || b.floor === floor));
 }
+
+// ---------- 枝番 ----------
+// 同じ階・同じ黒板(符号＋検査項目)の写真に 1, 2, 3… と番号を振る。1枚目は表示しない。
+async function nextBranch(floor, boardId, exceptId) {
+  const same = (await allRecords()).filter((r) => r.floor === floor && r.board_id === boardId && r.photo_id !== exceptId);
+  return same.reduce((m, r) => Math.max(m, r.branch ?? 1), 0) + 1;
+}
+const symbolWithBranch = (r) => (r.branch > 1 ? `${r.symbol}-${r.branch}` : r.symbol);
 
 // ---------- 画面: 選択 ----------
 function chips(el, values, current, label, onPick) {
@@ -131,6 +140,7 @@ async function onPhoto(file) {
     project_id: state.data.project.id,
     floor, type: board.type, symbol: board.symbol, item: board.item,
     board_id: board.board_id,
+    branch: await nextBranch(floor, board.board_id),
     board_lines: lines,
     captured_at_device: localIso(now),
     exif_datetime: readExifDate(buf),
@@ -141,7 +151,7 @@ async function onPhoto(file) {
     history: [],
   };
   await putRecord(rec);
-  toast(`保存しました: ${floor} ${board.symbol} ${board.item}`);
+  toast(`保存しました: ${floor} ${symbolWithBranch(rec)} ${board.item}`);
   updateCount();
 }
 
@@ -170,10 +180,10 @@ async function renderList() {
     const div = document.createElement("div");
     div.className = "rec";
     const url = URL.createObjectURL(r.composed);
-    div.innerHTML = `<img src="${url}"><div class="meta"><b>${esc(r.floor)} ${esc(r.symbol)}</b> ${esc(r.type)}・${esc(r.item)}<br>` +
+    div.innerHTML = `<img src="${url}"><div class="meta"><b>${esc(r.floor)} ${esc(symbolWithBranch(r))}</b> ${esc(r.type)}・${esc(r.item)}<br>` +
       `${r.captured_at_device.replace("T", " ").slice(0, 16)}<br>${r.sync_state}` +
-      (r.history.length ? `<br>修正 ${r.history.length}回` : "") + `<br><button>この写真の符号を直す</button></div>`;
-    div.querySelector("button").onclick = () => reassign(r);
+      (r.history.length ? `<br>修正 ${r.history.length}回` : "") + `<br><button>大きく見る</button></div>`;
+    div.querySelector("img").onclick = div.querySelector("button").onclick = () => openViewer(r);
     return div;
   }));
   const est = await navigator.storage?.estimate?.();
@@ -183,30 +193,65 @@ async function renderList() {
     : "";
 }
 
+// ---------- 写真の確認(拡大)・削除 ----------
+let viewing = null;
+function openViewer(r) {
+  viewing = r;
+  $("viewerTitle").textContent = `${r.floor} ${symbolWithBranch(r)} ${r.item}`;
+  showViewerImage("composed");
+  $("viewer").hidden = false;
+}
+function showViewerImage(kind) {
+  URL.revokeObjectURL($("viewerImg").src);
+  $("viewerImg").src = URL.createObjectURL(viewing[kind]);
+  $("viewerKind").textContent = kind === "composed" ? "元の写真を見る" : "黒板入りを見る";
+  $("viewerKind").onclick = () => showViewerImage(kind === "composed" ? "original" : "composed");
+}
+function closeViewer() {
+  $("viewer").hidden = true;
+  URL.revokeObjectURL($("viewerImg").src);
+  viewing = null;
+}
+async function deleteViewing() {
+  const r = viewing;
+  const note = r.sync_state === "書き出し済" ? "\n書き出し済みのファイル(iPhoneの「ファイル」やPC)は消えません。" : "";
+  if (!confirm(`「${r.floor} ${symbolWithBranch(r)} ${r.item}」の写真を削除しますか？\n元に戻せません。${note}`)) return;
+  await deleteRecord(r.photo_id);
+  closeViewer();
+  toast("削除しました。");
+  renderList();
+  updateCount();
+}
+
 async function reassign(r) {
   if (!state.board || !state.floor) { toast("先に「撮影」画面で、正しい階と符号を選んでください。"); return; }
   const to = `${state.floor} ${state.board.symbol} ${state.board.item}`;
   if (!confirm(`この写真を「${r.floor} ${r.symbol} ${r.item}」から「${to}」に直しますか？`)) return;
   const lines = boardLines(state.board, state.floor);
-  r.history.push({ at: localIso(new Date()), from: { floor: r.floor, board_id: r.board_id }, to: { floor: state.floor, board_id: state.board.board_id } });
+  r.history.push({ at: localIso(new Date()), from: { floor: r.floor, board_id: r.board_id, branch: r.branch }, to: { floor: state.floor, board_id: state.board.board_id } });
   Object.assign(r, { floor: state.floor, type: state.board.type, symbol: state.board.symbol, item: state.board.item,
-    board_id: state.board.board_id, board_lines: lines, sync_state: "未書き出し" });
+    board_id: state.board.board_id, board_lines: lines, sync_state: "未書き出し",
+    branch: await nextBranch(state.floor, state.board.board_id, r.photo_id) });
   r.composed = await composeImage(r.original, lines, new Date(r.captured_at_device));
   await putRecord(r);
-  toast(`直しました: ${to}`);
+  closeViewer();
+  toast(`直しました: ${state.floor} ${symbolWithBranch(r)} ${r.item}`);
   renderList();
 }
 
-async function exportUnsent() {
-  const recs = (await allRecords()).filter((r) => r.sync_state !== "書き出し済");
-  if (!recs.length) { toast("書き出していない写真はありません。"); return; }
-  const meta = recs.map(({ original, composed, ...m }) => ({ ...m, file: `${m.photo_id}.jpg`, original_file: `${m.photo_id}_orig.jpg` }));
+// all=false: まだ書き出していない写真だけ / all=true: 端末にある写真すべて(書き出し直し)
+async function exportRecords(all) {
+  const recs = (await allRecords()).filter((r) => all || r.sync_state !== "書き出し済");
+  if (!recs.length) { toast(all ? "写真がありません。" : "書き出していない写真はありません。「すべて書き出す」で書き出し直せます。"); return; }
+  // ファイル名で中身がわかるように「階_符号-枝番_検査項目_IDの先頭」にする
+  const base = (r) => `${r.floor}_${symbolWithBranch(r)}_${r.item}_${r.photo_id.slice(0, 8)}`.replace(/[\\/:*?"<>|]/g, "_");
+  const meta = recs.map(({ original, composed, ...m }) => ({ ...m, file: `${base(m)}.jpg`, original_file: `${base(m)}_元.jpg` }));
   const stamp = localIso(new Date()).replace(/[-:T]/g, "").slice(0, 14);
   const files = [new File([JSON.stringify(meta, null, 1)], `records_${stamp}.json`, { type: "application/json" })];
-  for (const r of recs) {
-    files.push(new File([r.composed], `${r.photo_id}.jpg`, { type: "image/jpeg" }));
-    files.push(new File([r.original], `${r.photo_id}_orig.jpg`, { type: r.original.type }));
-  }
+  recs.forEach((r, i) => {
+    files.push(new File([r.composed], meta[i].file, { type: "image/jpeg" }));
+    files.push(new File([r.original], meta[i].original_file, { type: r.original.type }));
+  });
   if (!navigator.canShare?.({ files })) { toast("この端末では共有での書き出しができません。"); return; }
   try {
     await navigator.share({ files, title: "配筋写真" });
@@ -277,7 +322,11 @@ function show(view) {
   $("camera").onchange = (e) => { onPhoto(e.target.files[0]); e.target.value = ""; };
   $("tabShoot").onclick = () => show("shoot");
   $("tabList").onclick = () => show("list");
-  $("exportBtn").onclick = exportUnsent;
+  $("exportBtn").onclick = () => exportRecords(false);
+  $("exportAllBtn").onclick = () => exportRecords(true);
+  $("viewerClose").onclick = closeViewer;
+  $("viewerDelete").onclick = deleteViewing;
+  $("viewerReassign").onclick = () => reassign(viewing);
   const saved = await getSetting("boards");
   if (saved) applyBoards(saved); else render();
   updateCount();
