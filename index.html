@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#18482f">
+<link rel="manifest" href="manifest.json">
+<title>配筋黒板</title>
+<style>
+  :root { --bg:#f4f4f1; --fg:#1c1c1c; --board:#18482f; --accent:#d9480f; --line:#ccc; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system, "Hiragino Sans", "BIZ UDGothic", sans-serif; background:var(--bg); color:var(--fg); }
+  header { position:sticky; top:0; z-index:2; background:var(--board); color:#fff; padding:10px 16px calc(10px); padding-top:max(10px, env(safe-area-inset-top)); display:flex; justify-content:space-between; align-items:center; }
+  header h1 { font-size:17px; margin:0; }
+  nav button { background:none; border:1px solid #fff8; color:#fff; border-radius:6px; padding:6px 10px; font-size:14px; }
+  main { padding:12px 16px 120px; }
+  h2 { font-size:14px; color:#555; margin:16px 0 6px; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .chips button { min-width:56px; padding:10px 12px; font-size:17px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+  .chips button.on { background:var(--board); color:#fff; border-color:var(--board); }
+  .selected { margin-top:16px; background:var(--board); color:#fff; border-radius:10px; padding:14px; }
+  .selected .big { font-size:40px; font-weight:700; letter-spacing:1px; }
+  .selected .warn { background:var(--accent); display:inline-block; padding:2px 8px; border-radius:4px; font-size:13px; margin-top:6px; }
+  .selected ol { margin:8px 0 0; padding-left:0; list-style:none; font-size:15px; line-height:1.6; }
+  .shoot { position:fixed; left:0; right:0; bottom:0; padding:12px 16px max(12px, env(safe-area-inset-bottom)); background:#fffe; border-top:1px solid var(--line); }
+  .shoot label { display:block; text-align:center; background:var(--accent); color:#fff; font-size:20px; font-weight:700; padding:16px; border-radius:12px; }
+  .shoot label.off { background:#999; }
+  .toast { position:fixed; left:16px; right:16px; bottom:96px; background:#222; color:#fff; padding:12px; border-radius:8px; font-size:15px; display:none; }
+  .rec { display:flex; gap:10px; background:#fff; border:1px solid var(--line); border-radius:8px; padding:8px; margin-bottom:8px; }
+  .rec img { width:96px; height:72px; object-fit:cover; border-radius:4px; }
+  .rec .meta { font-size:14px; line-height:1.5; flex:1; }
+  .rec .meta b { font-size:16px; }
+  .rec button { font-size:13px; margin-top:4px; }
+  .tools button { padding:10px 12px; font-size:15px; margin:4px 4px 0 0; }
+  .filebtn { display:inline-block; margin-top:10px; background:#fff; color:var(--board); font-weight:700; padding:12px 16px; border-radius:8px; }
+  .filebtn.small { border:1px solid var(--line); font-weight:400; padding:9px 12px; font-size:15px; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">配筋黒板</h1>
+  <nav><button id="tabShoot">撮影</button> <button id="tabList">写真一覧 <span id="count">0</span></button></nav>
+</header>
+
+<main id="shootView">
+  <div id="noData" class="selected">
+    <div>最初に黒板データ（boards.json）を読み込んでください。</div>
+    <label class="filebtn">黒板データを読み込む<input id="boardsFile" type="file" accept=".json,application/json" hidden></label>
+  </div>
+  <div id="pickers" hidden>
+  <h2>階</h2><div class="chips" id="floors"></div>
+  <h2>部材種別</h2><div class="chips" id="types"></div>
+  <h2>符号</h2><div class="chips" id="symbols"></div>
+  <h2>検査項目</h2><div class="chips" id="items"></div>
+  <div class="selected" id="selected" hidden></div>
+  </div>
+</main>
+
+<main id="listView" hidden>
+  <div class="tools">
+    <button id="exportBtn">未書き出しを共有で書き出す</button>
+    <label class="filebtn small">黒板データを読み直す<input id="boardsFile2" type="file" accept=".json,application/json" hidden></label>
+  </div>
+  <p id="storageInfo" style="font-size:13px;color:#666"></p>
+  <div id="records"></div>
+</main>
+
+<div class="shoot" id="shootBar">
+  <label id="shootLabel" class="off" for="camera">符号を選んでください</label>
+  <input id="camera" type="file" accept="image/*" capture="environment" hidden disabled>
+</div>
+<div class="toast" id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>
