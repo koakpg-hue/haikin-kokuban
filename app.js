@@ -254,7 +254,7 @@ async function exportRecords(all) {
   });
   if (!navigator.canShare?.({ files })) { toast("この端末では共有での書き出しができません。"); return; }
   try {
-    await navigator.share({ files, title: "配筋写真" });
+    await navigator.share({ files });   // title を付けるとiPhoneでは余分なテキストファイルとして保存される
   } catch (e) {
     toast("書き出しを中止しました。写真は端末に残っています。");
     return;
