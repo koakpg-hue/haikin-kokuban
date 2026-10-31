@@ -8,6 +8,11 @@ const $ = (id) => document.getElementById(id);
 const state = { data: null, floor: null, type: null, board: null, item: null, sub: null, corner: "左下" };
 // 写真の記録に使う検査項目名(細分があれば「構造スリット（水平スリット）」の形)
 const itemLabel = (b) => b.label ?? b.item;
+// 構造スリットは撮影箇所(通り・間)も記録する。例: Y1通り X1〜X2間
+const needsLocation = (b) => b?.item === "構造スリット";
+state.loc = { line: "", from: "", to: "" };
+const half = (v) => v.replace(/[Ａ-Ｚａ-ｚ０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).toUpperCase().trim();
+const locText = (l) => (l ? `${l.line}通り` + (l.from || l.to ? ` ${l.from}〜${l.to}間` : "") : "");
 
 // ---------- 端末内の保存(IndexedDB) ----------
 let dbp;
@@ -121,12 +126,15 @@ function render() {
   // 開くたびに左下から始める(基本は左下)
   chips($("corners"), CORNERS, state.corner, null, (v) => { state.corner = v; render(); });
 
-  const ready = state.floor && state.board;
-  $("selected").hidden = !ready;
+  const needLoc = needsLocation(state.board);
+  $("locBox").hidden = !needLoc;
+  const ready = state.floor && state.board && (!needLoc || state.loc.line);
+  $("selected").hidden = !(state.floor && state.board);
   $("camera").disabled = !ready;
   $("shootLabel").className = ready ? "" : "off";
-  $("shootLabel").textContent = ready ? `撮影する（${state.floor} ${state.board.symbol} ${itemLabel(state.board)}）` : "符号を選んでください";
-  if (ready) {
+  $("shootLabel").textContent = ready ? `撮影する（${state.floor} ${state.board.symbol} ${itemLabel(state.board)}）`
+    : state.board && needLoc ? "通りを入力してください" : "符号を選んでください";
+  if (state.floor && state.board) {
     const lines = boardLines(state.board, state.floor);
     $("selected").innerHTML =
       `<div class="big">${state.floor}　${esc(state.board.symbol)}</div>` +
@@ -154,6 +162,7 @@ async function onPhoto(file) {
     board_lines: lines,
     captured_at_device: localIso(now),
     board_corner: state.corner,
+    location: needsLocation(board) ? { ...state.loc } : null,
     exif_datetime: readExifDate(buf),
     sha256: sha,
     original: new Blob([buf], { type: file.type || "image/jpeg" }),
@@ -199,6 +208,7 @@ async function renderList() {
     div.className = "rec";
     const url = URL.createObjectURL(r.composed);
     div.innerHTML = `<img src="${url}"><div class="meta"><b>${esc(r.floor)} ${esc(symbolWithBranch(r))}</b> ${esc(r.type)}・${esc(r.item)}<br>` +
+      (r.location ? `${esc(locText(r.location))}<br>` : "") +
       `${r.captured_at_device.replace("T", " ").slice(0, 16)}<br>${r.sync_state}` +
       (r.history.length ? `<br>修正 ${r.history.length}回` : "") + `<br><button>大きく見る</button></div>`;
     div.querySelector("img").onclick = div.querySelector("button").onclick = () => openViewer(r);
@@ -215,7 +225,7 @@ async function renderList() {
 let viewing = null;
 function openViewer(r) {
   viewing = r;
-  $("viewerTitle").textContent = `${r.floor} ${symbolWithBranch(r)} ${r.item}`;
+  $("viewerTitle").textContent = `${r.floor} ${symbolWithBranch(r)} ${r.item} ${locText(r.location)}`;
   showViewerImage("composed");
   renderViewerCorners();
   $("viewer").hidden = false;
@@ -257,12 +267,14 @@ async function deleteViewing() {
 
 async function reassign(r) {
   if (!state.board || !state.floor) { toast("先に「撮影」画面で、正しい階と符号を選んでください。"); return; }
+  if (needsLocation(state.board) && !state.loc.line) { toast("先に「撮影」画面で、通りを入力してください。"); return; }
   const to = `${state.floor} ${state.board.symbol} ${itemLabel(state.board)}`;
   if (!confirm(`この写真を「${r.floor} ${r.symbol} ${r.item}」から「${to}」に直しますか？`)) return;
   const lines = boardLines(state.board, state.floor);
   r.history.push({ at: localIso(new Date()), from: { floor: r.floor, board_id: r.board_id, branch: r.branch }, to: { floor: state.floor, board_id: state.board.board_id } });
   Object.assign(r, { floor: state.floor, type: state.board.type, symbol: state.board.symbol, item: itemLabel(state.board),
     board_id: state.board.board_id, board_lines: lines, sync_state: "未書き出し",
+    location: needsLocation(state.board) ? { ...state.loc } : null,
     branch: await nextBranch(state.floor, state.board.board_id, r.photo_id) });
   r.composed = await composeImage(r.original, r);
   await putRecord(r);
@@ -352,6 +364,9 @@ function show(view) {
   $("boardsFile").onchange = (e) => { importBoards(e.target.files[0]); e.target.value = ""; };
   $("boardsFile2").onchange = $("boardsFile").onchange;
   $("camera").onchange = (e) => { onPhoto(e.target.files[0]); e.target.value = ""; };
+  for (const k of ["line", "from", "to"]) {
+    $(`loc_${k}`).oninput = (e) => { state.loc[k] = half(e.target.value); render(); };
+  }
   $("tabShoot").onclick = () => show("shoot");
   $("tabList").onclick = () => show("list");
   $("exportBtn").onclick = () => exportRecords(false);

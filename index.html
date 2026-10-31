@@ -42,6 +42,8 @@
   .vbar button.danger { background:#c92a2a; color:#fff; }
   .vimg { flex:1; overflow:auto; display:flex; align-items:center; justify-content:center; }
   .vimg img { max-width:100%; max-height:100%; }
+  .loc { display:flex; align-items:center; gap:6px; font-size:17px; }
+  .loc input { width:64px; font-size:18px; padding:8px; border:1px solid var(--line); border-radius:8px; text-align:center; }
   .corners { display:grid; grid-template-columns:repeat(2, 72px); gap:6px; }
   .corners button { min-width:0; padding:8px 0; font-size:15px; }
   .vbar .chips button { background:#fff; color:#111; }
@@ -67,6 +69,14 @@
   <h2>符号</h2><div class="chips" id="symbols"></div>
   <h2>検査項目</h2><div class="chips" id="items"></div>
   <div id="subsBox" hidden><h2>細分</h2><div class="chips" id="subs"></div></div>
+  <div id="locBox" hidden>
+    <h2>撮影箇所（通り・間）</h2>
+    <div class="loc">
+      <input id="loc_line" placeholder="Y1" autocomplete="off" autocapitalize="characters">通り
+      <input id="loc_from" placeholder="X1" autocomplete="off" autocapitalize="characters">〜
+      <input id="loc_to" placeholder="X2" autocomplete="off" autocapitalize="characters">間
+    </div>
+  </div>
   <h2>黒板の位置</h2><div class="chips corners" id="corners"></div>
   <div class="selected" id="selected" hidden></div>
   </div>
