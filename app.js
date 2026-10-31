@@ -5,7 +5,9 @@ const FLOORS = ["1F", "2F", "3F", "4F", "5F", "6F", "7F", "8F", "RF"];
 const TYPES = ["柱", "大梁", "小梁", "スラブ", "壁"];
 const CORNERS = ["左上", "右上", "左下", "右下"];   // 写真に入れる黒板の位置
 const $ = (id) => document.getElementById(id);
-const state = { data: null, floor: null, type: null, board: null, item: null, corner: "左下" };
+const state = { data: null, floor: null, type: null, board: null, item: null, sub: null, corner: "左下" };
+// 写真の記録に使う検査項目名(細分があれば「構造スリット（水平スリット）」の形)
+const itemLabel = (b) => b.label ?? b.item;
 
 // ---------- 端末内の保存(IndexedDB) ----------
 let dbp;
@@ -97,19 +99,24 @@ function render() {
   chips($("types"), TYPES, state.type, null, (v) => { state.type = v; state.board = null; render(); });
   const list = state.data && state.floor && state.type ? boardsFor(state.floor, state.type) : [];
   const symbols = [...new Set(list.map((b) => b.symbol))];
+  // 符号・検査項目・細分を選び直したら、今の選択に最も近い黒板を選ぶ
+  const pick = (sym, item, sub) =>
+    list.find((b) => b.symbol === sym && b.item === item && (b.sub ?? null) === sub) ??
+    list.find((b) => b.symbol === sym && b.item === item) ??
+    list.find((b) => b.symbol === sym);
+  const setBoard = (b) => { state.board = b; state.item = b.item; state.sub = b.sub ?? null; };
   chips($("symbols"), symbols, state.board?.symbol, null, (sym) => {
     const prev = state.board;
-    state.board = list.find((b) => b.symbol === sym && b.item === (state.item ?? b.item)) ?? list.find((b) => b.symbol === sym);
-    state.item = state.board.item;
+    setBoard(pick(sym, state.item, state.sub));
     if (prev && prev.symbol !== sym) toast(`符号を変更しました: ${prev.symbol} → ${sym}`);
     render();
   });
-  const items = state.board ? [...new Set(list.filter((b) => b.symbol === state.board.symbol).map((b) => b.item))] : [];
-  chips($("items"), items, state.item, null, (v) => {
-    state.item = v;
-    state.board = list.find((b) => b.symbol === state.board.symbol && b.item === v);
-    render();
-  });
+  const mine = state.board ? list.filter((b) => b.symbol === state.board.symbol) : [];
+  const items = [...new Set(mine.map((b) => b.item))];
+  chips($("items"), items, state.item, null, (v) => { setBoard(pick(state.board.symbol, v, state.sub)); render(); });
+  const subs = mine.filter((b) => b.item === state.item && b.sub).map((b) => b.sub);
+  $("subsBox").hidden = !subs.length;
+  chips($("subs"), subs, state.sub, null, (v) => { setBoard(pick(state.board.symbol, state.item, v)); render(); });
 
   // 開くたびに左下から始める(基本は左下)
   chips($("corners"), CORNERS, state.corner, null, (v) => { state.corner = v; render(); });
@@ -118,12 +125,12 @@ function render() {
   $("selected").hidden = !ready;
   $("camera").disabled = !ready;
   $("shootLabel").className = ready ? "" : "off";
-  $("shootLabel").textContent = ready ? `撮影する（${state.floor} ${state.board.symbol} ${state.item}）` : "符号を選んでください";
+  $("shootLabel").textContent = ready ? `撮影する（${state.floor} ${state.board.symbol} ${itemLabel(state.board)}）` : "符号を選んでください";
   if (ready) {
     const lines = boardLines(state.board, state.floor);
     $("selected").innerHTML =
       `<div class="big">${state.floor}　${esc(state.board.symbol)}</div>` +
-      `<div>${esc(state.board.type)}・${esc(state.item)}</div>` +
+      `<div>${esc(state.board.type)}・${esc(itemLabel(state.board))}</div>` +
       (state.board.confirmed ? "" : `<div class="warn">未確認のデータです（PoC用）</div>`) +
       `<ol>${lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ol>`;
   }
@@ -141,7 +148,7 @@ async function onPhoto(file) {
   const rec = {
     photo_id: crypto.randomUUID(),
     project_id: state.data.project.id,
-    floor, type: board.type, symbol: board.symbol, item: board.item,
+    floor, type: board.type, symbol: board.symbol, item: itemLabel(board),
     board_id: board.board_id,
     branch: await nextBranch(floor, board.board_id),
     board_lines: lines,
@@ -155,7 +162,7 @@ async function onPhoto(file) {
   };
   rec.composed = await composeImage(file, rec);
   await putRecord(rec);
-  toast(`保存しました: ${floor} ${symbolWithBranch(rec)} ${board.item}`);
+  toast(`保存しました: ${floor} ${symbolWithBranch(rec)} ${rec.item}`);
   updateCount();
 }
 
@@ -250,11 +257,11 @@ async function deleteViewing() {
 
 async function reassign(r) {
   if (!state.board || !state.floor) { toast("先に「撮影」画面で、正しい階と符号を選んでください。"); return; }
-  const to = `${state.floor} ${state.board.symbol} ${state.board.item}`;
+  const to = `${state.floor} ${state.board.symbol} ${itemLabel(state.board)}`;
   if (!confirm(`この写真を「${r.floor} ${r.symbol} ${r.item}」から「${to}」に直しますか？`)) return;
   const lines = boardLines(state.board, state.floor);
   r.history.push({ at: localIso(new Date()), from: { floor: r.floor, board_id: r.board_id, branch: r.branch }, to: { floor: state.floor, board_id: state.board.board_id } });
-  Object.assign(r, { floor: state.floor, type: state.board.type, symbol: state.board.symbol, item: state.board.item,
+  Object.assign(r, { floor: state.floor, type: state.board.type, symbol: state.board.symbol, item: itemLabel(state.board),
     board_id: state.board.board_id, board_lines: lines, sync_state: "未書き出し",
     branch: await nextBranch(state.floor, state.board.board_id, r.photo_id) });
   r.composed = await composeImage(r.original, r);
