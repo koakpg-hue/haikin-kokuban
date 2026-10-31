@@ -42,6 +42,10 @@
   .vbar button.danger { background:#c92a2a; color:#fff; }
   .vimg { flex:1; overflow:auto; display:flex; align-items:center; justify-content:center; }
   .vimg img { max-width:100%; max-height:100%; }
+  .corners { display:grid; grid-template-columns:repeat(2, 72px); gap:6px; }
+  .corners button { min-width:0; padding:8px 0; font-size:15px; }
+  .vbar .chips button { background:#fff; color:#111; }
+  .vbar .chips button.on { background:var(--board); color:#fff; }
   .vhint { margin:4px; font-size:13px; color:#aaa; text-align:center; }
   [hidden] { display:none !important; }
 </style>
@@ -62,6 +66,7 @@
   <h2>部材種別</h2><div class="chips" id="types"></div>
   <h2>符号</h2><div class="chips" id="symbols"></div>
   <h2>検査項目</h2><div class="chips" id="items"></div>
+  <h2>黒板の位置</h2><div class="chips corners" id="corners"></div>
   <div class="selected" id="selected" hidden></div>
   </div>
 </main>
@@ -84,6 +89,7 @@
   <div class="vbar"><b id="viewerTitle"></b><button id="viewerClose">閉じる</button></div>
   <div class="vimg"><img id="viewerImg" alt=""></div>
   <p class="vhint">2本指で広げると拡大できます。</p>
+  <div class="vbar"><span>黒板の位置</span><div class="chips corners" id="viewerCorners"></div></div>
   <div class="vbar">
     <button id="viewerKind"></button>
     <button id="viewerReassign">符号を直す</button>

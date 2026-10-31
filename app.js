@@ -3,8 +3,9 @@
 
 const FLOORS = ["1F", "2F", "3F", "4F", "5F", "6F", "7F", "8F", "RF"];
 const TYPES = ["柱", "大梁", "小梁", "スラブ", "壁"];
+const CORNERS = ["左上", "右上", "左下", "右下"];   // 写真に入れる黒板の位置
 const $ = (id) => document.getElementById(id);
-const state = { data: null, floor: null, type: null, board: null, item: null };
+const state = { data: null, floor: null, type: null, board: null, item: null, corner: "左下" };
 
 // ---------- 端末内の保存(IndexedDB) ----------
 let dbp;
@@ -110,6 +111,9 @@ function render() {
     render();
   });
 
+  // 開くたびに左下から始める(基本は左下)
+  chips($("corners"), CORNERS, state.corner, null, (v) => { state.corner = v; render(); });
+
   const ready = state.floor && state.board;
   $("selected").hidden = !ready;
   $("camera").disabled = !ready;
@@ -134,7 +138,6 @@ async function onPhoto(file) {
   if (await findBySha(sha)) { toast("同じ写真がすでに保存されています。保存しませんでした。"); return; }
   const lines = boardLines(board, floor);
   const now = new Date();
-  const composed = await composeImage(file, lines, now);
   const rec = {
     photo_id: crypto.randomUUID(),
     project_id: state.data.project.id,
@@ -143,29 +146,37 @@ async function onPhoto(file) {
     branch: await nextBranch(floor, board.board_id),
     board_lines: lines,
     captured_at_device: localIso(now),
+    board_corner: state.corner,
     exif_datetime: readExifDate(buf),
     sha256: sha,
     original: new Blob([buf], { type: file.type || "image/jpeg" }),
-    composed,
     sync_state: "未書き出し",
     history: [],
   };
+  rec.composed = await composeImage(file, rec);
   await putRecord(rec);
   toast(`保存しました: ${floor} ${symbolWithBranch(rec)} ${board.item}`);
   updateCount();
 }
 
-async function composeImage(file, lines, when) {
+// 写真の黒板は最小限(工事名・階と部材の配筋・符号・撮影日)。配筋の詳細は台帳の右側に載せる。
+function photoBoardRows(r) {
+  return [state.data.project.name, r.board_lines[0], r.symbol, fmtDate(new Date(r.captured_at_device))];
+}
+
+async function composeImage(file, r) {
   const img = await createImageBitmap(file);
   const scale = Math.min(1, 2048 / Math.max(img.width, img.height));
   const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
   const c = Object.assign(document.createElement("canvas"), { width: w, height: h });
   const g = c.getContext("2d");
   g.drawImage(img, 0, 0, w, h);
-  const rows = [state.data.project.name, ...lines, fmtDate(when)];
+  const rows = photoBoardRows(r);
   const bw = Math.round(w * 0.3), size = Math.max(14, Math.floor(bw / 16));
   const pad = size / 2, lh = Math.round(size * 1.45), bh = pad * 2 + lh * rows.length;
-  const x = Math.round(w / 50), y = h - bh - Math.round(w / 50);
+  const m = Math.round(w / 50), corner = r.board_corner ?? "左下";
+  const x = corner.startsWith("左") ? m : w - bw - m;
+  const y = corner.endsWith("上") ? m : h - bh - m;
   g.fillStyle = "#18482f"; g.fillRect(x, y, bw, bh);
   g.strokeStyle = "#f0f0f0"; g.lineWidth = Math.max(2, size / 8); g.strokeRect(x, y, bw, bh);
   g.fillStyle = "#fafafa"; g.font = `${size}px "Hiragino Sans", "BIZ UDGothic", sans-serif`; g.textBaseline = "top";
@@ -199,6 +210,7 @@ function openViewer(r) {
   viewing = r;
   $("viewerTitle").textContent = `${r.floor} ${symbolWithBranch(r)} ${r.item}`;
   showViewerImage("composed");
+  renderViewerCorners();
   $("viewer").hidden = false;
 }
 function showViewerImage(kind) {
@@ -206,6 +218,19 @@ function showViewerImage(kind) {
   $("viewerImg").src = URL.createObjectURL(viewing[kind]);
   $("viewerKind").textContent = kind === "composed" ? "元の写真を見る" : "黒板入りを見る";
   $("viewerKind").onclick = () => showViewerImage(kind === "composed" ? "original" : "composed");
+}
+// 撮った後でも黒板の位置を変えられる(元の写真から作り直す)
+function renderViewerCorners() {
+  chips($("viewerCorners"), CORNERS, viewing.board_corner ?? "左下", null, async (v) => {
+    viewing.board_corner = v;
+    viewing.composed = await composeImage(viewing.original, viewing);
+    viewing.sync_state = "未書き出し";
+    await putRecord(viewing);
+    showViewerImage("composed");
+    renderViewerCorners();
+    renderList();
+    toast(`黒板を${v}に移しました。`);
+  });
 }
 function closeViewer() {
   $("viewer").hidden = true;
@@ -232,7 +257,7 @@ async function reassign(r) {
   Object.assign(r, { floor: state.floor, type: state.board.type, symbol: state.board.symbol, item: state.board.item,
     board_id: state.board.board_id, board_lines: lines, sync_state: "未書き出し",
     branch: await nextBranch(state.floor, state.board.board_id, r.photo_id) });
-  r.composed = await composeImage(r.original, lines, new Date(r.captured_at_device));
+  r.composed = await composeImage(r.original, r);
   await putRecord(r);
   closeViewer();
   toast(`直しました: ${state.floor} ${symbolWithBranch(r)} ${r.item}`);
